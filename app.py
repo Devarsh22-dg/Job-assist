@@ -3,6 +3,7 @@ from collections import Counter
 import re
 from datetime import date
 from io import StringIO
+import difflib
 
 # Prefer PyPDF2, fall back to pypdf if available
 try:
@@ -18,6 +19,9 @@ try:
     import docx
 except ModuleNotFoundError:
     docx = None
+
+# Streamlit components for rendering HTML diffs
+import streamlit.components.v1 as components
 
 # -----------------------------
 # Domain-Aware Keyword Extraction
@@ -129,6 +133,33 @@ def read_file(uploaded_file):
         return ""
 
 # -----------------------------
+# Helper: Visual diff generation
+# -----------------------------
+
+def make_html_diff(old_text, new_text):
+    """Return an HTML table with side-by-side diff highlighting additions/removals."""
+    old_lines = old_text.splitlines()
+    new_lines = new_text.splitlines()
+    differ = difflib.HtmlDiff(tabsize=4, wrapcolumn=80)
+    try:
+        html_table = differ.make_table(old_lines, new_lines, fromdesc='Original', todesc='Tailored', context=True, numlines=1)
+        # Wrap with minimal styling for better scroll/display
+        html = f"""
+        <html>
+        <head>
+        <meta charset='utf-8'>
+        <style>body{{font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;}}</style>
+        </head>
+        <body>
+        {html_table}
+        </body>
+        </html>
+        """
+        return html
+    except Exception as e:
+        return f"<pre>Failed to generate diff: {e}</pre>"
+
+# -----------------------------
 # Streamlit App UI
 # -----------------------------
 
@@ -165,8 +196,20 @@ if st.button("✨ Tailor Resume"):
         st.subheader("🧩 Extracted Domain Keywords")
         st.write(", ".join(keywords))
 
-        st.subheader("📝 Tailored Resume Draft")
-        st.text_area("Tailored Resume", tailored_resume, height=300)
+        # Side-by-side plain text views
+        st.subheader("📝 Resume Comparison (Original vs Tailored)")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Original Resume**")
+            st.text_area("Original Resume", resume_text, height=400, key='original')
+        with col2:
+            st.markdown("**Tailored Resume**")
+            st.text_area("Tailored Resume", tailored_resume, height=400, key='tailored')
+
+        # Visual HTML diff
+        st.subheader("🔍 Visual Diff (highlighted changes)")
+        html_diff = make_html_diff(resume_text, tailored_resume)
+        components.html(html_diff, height=400, scrolling=True)
 
         st.subheader("💌 Cover Letter")
         st.text_area("Generated Cover Letter", cover_letter, height=250)
