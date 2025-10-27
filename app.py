@@ -1,63 +1,99 @@
 import streamlit as st
 from collections import Counter
-import re
 from datetime import date
 from io import StringIO
+import re
+import spacy
 from PyPDF2 import PdfReader
 import docx
 
-# -----------------------------
-# Keyword Extraction & Tailoring
-# -----------------------------
-STOPWORDS = set([
-    'a','an','the','and','or','of','to','with','for','in','on','by','as','is','are','be','from','that','this','will','can','must'
-])
+# Load spaCy model
+@st.cache_resource
+def load_nlp():
+    return spacy.load("en_core_web_lg")
 
-def extract_keywords(text, max_count=40):
+nlp = load_nlp()
+
+# -----------------------------
+# Domain-Aware + Semantic Keyword Extraction
+# -----------------------------
+
+STOPWORDS = set(spacy.lang.en.stop_words.STOP_WORDS)
+
+def extract_ai_keywords(text, max_count=40):
+    """Extract technical and domain keywords using NLP."""
     if not text:
         return []
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-    filtered = [w for w in words if w not in STOPWORDS]
-    freq = Counter(filtered)
-    return [w for w, _ in freq.most_common(max_count)]
+
+    doc = nlp(text)
+    keywords = []
+
+    # Extract named entities (e.g., frameworks, products, organizations)
+    for ent in doc.ents:
+        if ent.label_ in ["ORG", "PRODUCT", "SKILL", "WORK_OF_ART"]:
+            if ent.text.lower() not in STOPWORDS and len(ent.text) > 2:
+                keywords.append(ent.text.strip())
+
+    # Extract noun chunks (like 'data engineering', 'cloud infrastructure')
+    for chunk in doc.noun_chunks:
+        chunk_text = chunk.text.lower().strip()
+        if (
+            all(w not in STOPWORDS for w in chunk_text.split())
+            and len(chunk_text.split()) <= 4
+        ):
+            keywords.append(chunk_text)
+
+    # Clean up and rank by frequency and length
+    freq = Counter(keywords)
+    ranked = sorted(freq.items(), key=lambda x: (len(x[0].split()), x[1]), reverse=True)
+    keywords = [term for term, _ in ranked[:max_count]]
+
+    # Deduplicate, preserve order
+    return list(dict.fromkeys(keywords))
+
+# -----------------------------
+# Resume Tailoring
+# -----------------------------
 
 def tailor_resume(resume_text, job_text):
-    keywords = extract_keywords(job_text)
+    keywords = extract_ai_keywords(job_text)
     lines = [l.strip() for l in resume_text.split("\n") if l.strip()]
     tailored_lines = []
     lower_resume = " ".join(lines).lower()
+
+    # Detect missing / related keywords
     missing = [k for k in keywords if k not in lower_resume]
 
     for line in lines:
         matched = [k for k in keywords if k in line.lower()]
         if matched:
-            tailored_lines.append(f"- {line} (keywords: {', '.join(matched)})")
+            tailored_lines.append(f"- {line}  (keywords: {', '.join(matched)})")
         else:
             tailored_lines.append(f"- {line}")
 
     suggestions = [
-        f"- Suggested: Include experience with '{kw}' if relevant."
+        f"- Suggested: Mention your experience with '{kw}' or similar skills."
         for kw in missing[:10]
     ]
     return "\n".join(tailored_lines + ["", "--- Suggested Additions ---", *suggestions])
 
 def generate_cover_letter(name, company, position, job_text, summary):
-    keywords = extract_keywords(job_text, 10)
+    keywords = extract_ai_keywords(job_text, 10)
     top_keywords = ", ".join(keywords[:6])
     today = date.today().strftime("%B %d, %Y")
     return (
         f"{today}\n\n"
         f"Dear Hiring Team at {company},\n\n"
-        f"I am excited to apply for the {position} role. "
-        f"My background aligns closely with this opportunity, particularly in {top_keywords}. "
-        f"{summary}\n\n"
-        f"I look forward to contributing to {company}'s success.\n\n"
+        f"I am excited to apply for the {position} role. My background aligns strongly with the position, "
+        f"particularly in {top_keywords}. {summary}\n\n"
+        f"I would welcome the opportunity to contribute to {company}'s growth and innovation.\n\n"
         f"Sincerely,\n{name}"
     )
 
 # -----------------------------
-# Resume File Handling
+# File Reading
 # -----------------------------
+
 def read_file(uploaded_file):
     """Read uploaded resume text from TXT, DOCX, or PDF."""
     if uploaded_file is None:
@@ -77,12 +113,13 @@ def read_file(uploaded_file):
         return ""
 
 # -----------------------------
-# Streamlit App UI
+# Streamlit UI
 # -----------------------------
+
 st.set_page_config(page_title="AI Job Application Agent", layout="wide")
 
-st.title("🤖 AI Job Application Agent")
-st.write("Upload your resume and paste a job description to generate tailored application materials automatically!")
+st.title("🤖 AI Job Application Agent (Semantic Keyword Version)")
+st.write("This version uses spaCy NLP to detect domain-specific terms, synonyms, and professional jargons from job descriptions.")
 
 with st.sidebar:
     st.header("Settings")
@@ -105,11 +142,11 @@ if st.button("✨ Tailor Resume"):
     if not job_desc.strip():
         st.warning("Please paste a job description first.")
     else:
-        keywords = extract_keywords(job_desc, 40)
+        keywords = extract_ai_keywords(job_desc, 40)
         tailored_resume = tailor_resume(resume_text, job_desc)
         cover_letter = generate_cover_letter(name, company, position, job_desc, summary)
 
-        st.subheader("🧩 Extracted Keywords")
+        st.subheader("🧠 Extracted Domain Keywords (AI-Assisted)")
         st.write(", ".join(keywords))
 
         st.subheader("📝 Tailored Resume Draft")
@@ -121,4 +158,4 @@ if st.button("✨ Tailor Resume"):
         st.download_button("⬇️ Download Tailored Resume", tailored_resume, file_name="tailored_resume.txt")
         st.download_button("⬇️ Download Cover Letter", cover_letter, file_name="cover_letter.txt")
 
-st.caption("All processing runs locally in your browser. No data is stored or sent externally.")
+st.caption("All processing runs locally using spaCy's NLP model. No data is sent externally.")
