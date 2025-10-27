@@ -13,7 +13,11 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         PdfReader = None
 
-import docx
+# docx comes from the python-docx package; handle if it's missing so app doesn't crash
+try:
+    import docx
+except ModuleNotFoundError:
+    docx = None
 
 # -----------------------------
 # Domain-Aware Keyword Extraction
@@ -70,6 +74,7 @@ def tailor_resume(resume_text, job_text):
     ]
     return "\n".join(tailored_lines + ["", "--- Suggested Additions ---", *suggestions])
 
+
 def generate_cover_letter(name, company, position, job_text, summary):
     keywords = extract_jargon_keywords(job_text, 10)
     top_keywords = ", ".join(keywords[:6])
@@ -93,18 +98,32 @@ def read_file(uploaded_file):
         return ""
     file_type = uploaded_file.name.lower()
     if file_type.endswith(".txt"):
-        return uploaded_file.read().decode("utf-8")
+        # Streamlit's uploaded_file.read() returns bytes
+        try:
+            return uploaded_file.read().decode("utf-8")
+        except Exception:
+            return uploaded_file.getvalue().decode("utf-8") if hasattr(uploaded_file, "getvalue") else ""
     elif file_type.endswith(".pdf"):
         if PdfReader is None:
             st.error("PDF support is not installed. Add PyPDF2 or pypdf to requirements.txt and redeploy.")
             return ""
-        # PdfReader accepts a file-like object (Streamlit's uploader provides one)
-        reader = PdfReader(uploaded_file)
-        text = "\n".join((page.extract_text() or "") for page in reader.pages)
-        return text
+        try:
+            reader = PdfReader(uploaded_file)
+            text = "\n".join((page.extract_text() or "") for page in reader.pages)
+            return text
+        except Exception as e:
+            st.error(f"Failed to read PDF: {e}")
+            return ""
     elif file_type.endswith(".docx"):
-        doc = docx.Document(uploaded_file)
-        return "\n".join(p.text for p in doc.paragraphs)
+        if docx is None:
+            st.error("DOCX support is not installed. Add python-docx to requirements.txt and redeploy.")
+            return ""
+        try:
+            doc = docx.Document(uploaded_file)
+            return "\n".join(p.text for p in doc.paragraphs)
+        except Exception as e:
+            st.error(f"Failed to read DOCX: {e}")
+            return ""
     else:
         st.warning("Unsupported file type. Please upload a .txt, .docx, or .pdf file.")
         return ""
