@@ -3,7 +3,16 @@ from collections import Counter
 import re
 from datetime import date
 from io import StringIO
-from PyPDF2 import PdfReader
+
+# Prefer PyPDF2, fall back to pypdf if available
+try:
+    from PyPDF2 import PdfReader
+except ModuleNotFoundError:
+    try:
+        from pypdf import PdfReader
+    except ModuleNotFoundError:
+        PdfReader = None
+
 import docx
 
 # -----------------------------
@@ -86,8 +95,12 @@ def read_file(uploaded_file):
     if file_type.endswith(".txt"):
         return uploaded_file.read().decode("utf-8")
     elif file_type.endswith(".pdf"):
+        if PdfReader is None:
+            st.error("PDF support is not installed. Add PyPDF2 or pypdf to requirements.txt and redeploy.")
+            return ""
+        # PdfReader accepts a file-like object (Streamlit's uploader provides one)
         reader = PdfReader(uploaded_file)
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
         return text
     elif file_type.endswith(".docx"):
         doc = docx.Document(uploaded_file)
