@@ -6,8 +6,6 @@ from io import StringIO
 from PyPDF2 import PdfReader
 import docx
 
-python -c "from PyPDF2 import PdfReader; print('PyPDF2 is installed')"
-
 # -----------------------------
 # Domain-Aware Keyword Extraction
 # -----------------------------
