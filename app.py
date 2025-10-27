@@ -1,3 +1,18 @@
+import subprocess, sys
+
+# Ensure spaCy and model are available at runtime
+try:
+    import spacy
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "spacy==3.7.2"], check=True)
+    import spacy
+
+try:
+    nlp = spacy.load("en_core_web_lg")
+except OSError:
+    subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_lg"], check=True)
+    nlp = spacy.load("en_core_web_lg")
+
 import streamlit as st
 from collections import Counter
 from datetime import date
@@ -7,12 +22,6 @@ import spacy
 from PyPDF2 import PdfReader
 import docx
 
-# Load spaCy model
-@st.cache_resource
-def load_nlp():
-    return spacy.load("en_core_web_lg")
-
-nlp = load_nlp()
 
 # -----------------------------
 # Domain-Aware + Semantic Keyword Extraction
